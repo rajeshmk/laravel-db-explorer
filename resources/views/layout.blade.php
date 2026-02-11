@@ -53,8 +53,9 @@
                 date_format: '{{ config('db-explorer.date_format') }}',
                 datetime_format: '{{ config('db-explorer.datetime_format') }}'
             },
-            view: '{{ request()->routeIs('db-explorer.table') || request()->routeIs('db-explorer.record') ? 'table' : 'dashboard' }}',
-            currentTable: {!! json_encode($table ?? null) !!}
+            view: '{{ request()->routeIs('db-explorer.table') || request()->routeIs('db-explorer.table.records') || request()->routeIs('db-explorer.table.schema') || request()->routeIs('db-explorer.record') ? 'table' : 'dashboard' }}',
+            currentTable: {!! json_encode($table ?? null) !!},
+            tableTab: '{{ request()->routeIs('db-explorer.table.schema') ? 'schema' : 'records' }}'
         };
     </script>
     

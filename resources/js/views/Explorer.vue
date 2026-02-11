@@ -1,8 +1,7 @@
 <script setup>
-import { inject, ref, computed, watch, onMounted } from 'vue';
+import { inject, ref, computed, watch } from 'vue';
 
 const state = inject('state');
-const activeTab = ref('data');
 const showDetail = ref(false);
 const selectedRow = ref(null);
 const search = ref('');
@@ -11,7 +10,14 @@ const navigate = inject('navigate');
 const fetchTableData = inject('fetchTableData');
 const fetchRecordData = inject('fetchRecordData');
 const navigateToRecord = inject('navigateToRecord');
+const navigateToTableSchema = inject('navigateToTableSchema');
 const performSearch = inject('performSearch');
+const setTableTab = inject('setTableTab', () => {});
+
+const activeTab = computed({
+    get: () => (state.value.tableTab === 'schema' ? 'schema' : 'data'),
+    set: (tab) => setTableTab(tab === 'schema' ? 'schema' : 'records'),
+});
 
 let searchTimeout = null;
 
@@ -103,22 +109,18 @@ const getPrimaryKeyValue = (row) => {
     return row[pkColumn];
 };
 
-const formatEnumValues = (columnType) => {
-    if (!columnType || typeof columnType !== 'string') return columnType;
-    const matches = columnType.match(/'((?:\\'|[^'])*)'/g);
-    if (!matches) return columnType;
-    return matches
-        .map(value => value.slice(1, -1))
-        .map(value => value.replace(/[-_]+/g, ' '))
-        .join(', ');
+const isEnumColumn = (column) => {
+    return (column?.data_type || '').toLowerCase() === 'enum';
+};
+
+const getEnumValues = (column) => {
+    if (!isEnumColumn(column)) return [];
+    return Array.isArray(column?.enum_values) ? column.enum_values : [];
 };
 
 const formatColumnType = (column) => {
     if (!column) return '';
-    if ((column.data_type || '').toLowerCase() !== 'enum') {
-        return column.column_type || '';
-    }
-    return `enum(${formatEnumValues(column.column_type || '')})`;
+    return column.column_type || '';
 };
 
 // Watch for selectedRecord from deep link
@@ -327,12 +329,24 @@ const formatValue = (key, value, type, column) => {
                                         <span class="font-normal">{{ column.column_name }}</span>
                                     </div>
                                 </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <span class="dbx-type">{{ formatColumnType(column) }}</span>
+                                <td class="px-6 py-4">
+                                    <template v-if="isEnumColumn(column)">
+                                        <div v-if="getEnumValues(column).length" class="dbx-enum-list">
+                                            <span
+                                                v-for="(enumValue, enumIndex) in getEnumValues(column)"
+                                                :key="`${column.column_name}-enum-${enumIndex}`"
+                                                class="dbx-enum-badge"
+                                            >
+                                                {{ enumValue }}
+                                            </span>
+                                        </div>
+                                        <span v-else class="dbx-type">{{ formatColumnType(column) }}</span>
+                                    </template>
+                                    <span v-else class="dbx-type">{{ formatColumnType(column) }}</span>
                                 </td>
                                 <td class="px-6 py-5 whitespace-nowrap">
                                     <template v-if="getForeignKey(column.column_name)">
-                                        <button @click="navigate('table', getForeignKey(column.column_name).referenced_table_name)" 
+                                        <button @click="navigateToTableSchema(getForeignKey(column.column_name).referenced_table_name)" 
                                                 class="inline-flex items-center space-x-2 dbx-accent font-normal transition-all group">
                                             <svg class="h-4 w-4 opacity-70 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
@@ -439,7 +453,7 @@ const formatValue = (key, value, type, column) => {
                                                     <svg class="h-3.5 w-3.5 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7l5 5m0 0l-5 5m5-5H6" />
                                                     </svg>
-                                                    <span>View {{ getForeignKey(column.column_name).referenced_table_name }}</span>
+                                                    <span>View Record in {{ getForeignKey(column.column_name).referenced_table_name }}</span>
                                                 </button>
                                             </div>
                                         </template>
@@ -495,4 +509,23 @@ const formatValue = (key, value, type, column) => {
 .fade-in { animation: fadeIn 0.5s ease-out; }
 .slide-in-from-bottom-4 { animation: slideInFromBottom 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
 .slide-in-from-right-4 { animation: slideInFromRight 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
+
+.dbx-enum-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dbx-enum-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
 </style>

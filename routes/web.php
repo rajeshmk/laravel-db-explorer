@@ -15,6 +15,8 @@ Route::middleware(array_merge(
         Route::get('/', [ExplorerController::class, 'index'])->name('db-explorer.index');
         Route::get('/schema', [ExplorerController::class, 'schema'])->name('db-explorer.schema');
         Route::get('/table/{table}', [ExplorerController::class, 'table'])->name('db-explorer.table');
+        Route::get('/table/{table}/records', [ExplorerController::class, 'table'])->name('db-explorer.table.records');
+        Route::get('/table/{table}/schema', [ExplorerController::class, 'table'])->name('db-explorer.table.schema');
         Route::get('/table/{table}/record/{id}', [ExplorerController::class, 'record'])->name('db-explorer.record');
     })
 ;

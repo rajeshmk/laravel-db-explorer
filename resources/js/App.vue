@@ -22,8 +22,25 @@ const state = ref({
     foreignKeyDisplay: {},
     sort: null,
     direction: null,
-    searchQuery: ''
+    searchQuery: '',
+    tableTab: 'records'
 });
+
+const buildTablePath = (table, tab = 'records') => {
+    const safeTab = tab === 'schema' ? 'schema' : 'records';
+    return `/db-explorer/table/${table}/${safeTab}`;
+};
+
+const updateTableUrl = (table, tab = 'records', params = null) => {
+    const base = buildTablePath(table, tab);
+    if (!params || tab === 'schema') {
+        window.history.pushState({}, '', base);
+        return;
+    }
+
+    const qs = params.toString();
+    window.history.pushState({}, '', qs ? `${base}?${qs}` : base);
+};
 
 onMounted(() => {
     // Inject initial data from window if available
@@ -51,10 +68,27 @@ onMounted(() => {
         return;
     }
 
-    // Match table URL pattern
-    const tableMatch = path.match(/\/db-explorer\/table\/([^/]+)/);
+    const schemaMatch = path.match(/^\/db-explorer\/table\/([^/]+)\/schema(?:\/)?$/);
+    if (schemaMatch) {
+        const tableFromUrl = schemaMatch[1];
+        state.value.tableTab = 'schema';
+        fetchTableData(tableFromUrl, page, search, sort, direction);
+        return;
+    }
+
+    const recordsMatch = path.match(/^\/db-explorer\/table\/([^/]+)\/records(?:\/)?$/);
+    if (recordsMatch) {
+        const tableFromUrl = recordsMatch[1];
+        state.value.tableTab = 'records';
+        fetchTableData(tableFromUrl, page, search, sort, direction);
+        return;
+    }
+
+    // Backward compatibility for legacy /table/{table}
+    const tableMatch = path.match(/^\/db-explorer\/table\/([^/]+)(?:\/)?$/);
     if (tableMatch) {
         const tableFromUrl = tableMatch[1];
+        state.value.tableTab = 'records';
         fetchTableData(tableFromUrl, page, search, sort, direction);
         return;
     }
@@ -66,6 +100,7 @@ onMounted(() => {
 const navigate = (view, table = null) => {
     state.value.view = view;
     if (view === 'table' && table) {
+        state.value.tableTab = 'records';
         fetchTableData(table);
     } else {
         state.value.currentTable = null;
@@ -120,7 +155,7 @@ const fetchTableData = async (table, page = 1, searchQuery = '', sort = null, di
         state.value.sort = sort;
         state.value.direction = sort ? (direction || 'asc') : null;
         
-        // Update URL
+        // Update URL for dedicated records/schema paths
         const urlParams = new URLSearchParams();
         urlParams.set('page', page);
         if (searchQuery) urlParams.set('search', searchQuery);
@@ -128,7 +163,7 @@ const fetchTableData = async (table, page = 1, searchQuery = '', sort = null, di
             urlParams.set('sort', sort);
             urlParams.set('direction', direction || 'asc');
         }
-        window.history.pushState({}, '', `/db-explorer/table/${table}?${urlParams.toString()}`);
+        updateTableUrl(table, state.value.tableTab, urlParams);
     } catch (e) {
         const msg = e?.message || 'Failed to load table data';
         setError(msg);
@@ -179,6 +214,7 @@ const fetchRecordData = async (table, recordId, page = 1, searchQuery = '', sort
         state.value.pagination = data.pagination;
         state.value.currentTable = table;
         state.value.view = 'table';
+        state.value.tableTab = 'records';
         state.value.selectedRecord = data.selectedRecord;
         state.value.foreignKeyDisplay = data.foreignKeyDisplay || {};
         state.value.searchQuery = searchQuery;
@@ -231,11 +267,42 @@ const navigateToRecord = (table, recordId) => {
     fetchRecordData(table, recordId);
 };
 
+const navigateToTableSchema = (table) => {
+    state.value.tableTab = 'schema';
+    fetchTableData(table);
+};
+
+const setTableTab = (tab) => {
+    const resolvedTab = tab === 'schema' ? 'schema' : 'records';
+    state.value.tableTab = resolvedTab;
+
+    if (!state.value.currentTable) {
+        return;
+    }
+
+    if (resolvedTab === 'schema') {
+        updateTableUrl(state.value.currentTable, 'schema');
+        return;
+    }
+
+    const urlParams = new URLSearchParams();
+    const currentPage = state.value.pagination?.current_page || 1;
+    urlParams.set('page', String(currentPage));
+    if (state.value.searchQuery) urlParams.set('search', state.value.searchQuery);
+    if (state.value.sort) {
+        urlParams.set('sort', state.value.sort);
+        urlParams.set('direction', state.value.direction || 'asc');
+    }
+    updateTableUrl(state.value.currentTable, 'records', urlParams);
+};
+
 provide('navigate', navigate);
 provide('fetchTableData', fetchTableData);
 provide('fetchRecordData', fetchRecordData);
 provide('navigateToRecord', navigateToRecord);
+provide('navigateToTableSchema', navigateToTableSchema);
 provide('performSearch', performSearch);
+provide('setTableTab', setTableTab);
 provide('state', state);
 
 const tables = computed(() => {

@@ -9,9 +9,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <style>
         :root {
-            --ink: #0f172a;
-            --ink-soft: #334155;
-            --muted: #64748b;
+            --ink: #243247;
+            --ink-soft: #4d5f79;
+            --muted: #6b7c95;
             --line: #d8e0ea;
             --panel: #ffffff;
             --panel-soft: #f8fbff;
@@ -68,7 +68,8 @@
             font-size: 46px;
             line-height: 1.03;
             letter-spacing: -0.02em;
-            font-weight: 800;
+            font-weight: 700;
+            color: #2b3b57;
         }
 
         .meta {
@@ -81,7 +82,7 @@
         }
 
         .meta strong {
-            font-weight: 700;
+            font-weight: 600;
         }
 
         .actions {
@@ -147,7 +148,7 @@
             margin-top: 4px;
             font-size: 26px;
             line-height: 1;
-            font-weight: 800;
+            font-weight: 700;
             color: var(--ink);
         }
 
@@ -236,15 +237,44 @@
             gap: 10px;
             font-size: 24px;
             line-height: 1.2;
-            font-weight: 800;
+            font-weight: 700;
             letter-spacing: -0.01em;
+            color: #2d3d59;
         }
 
         .mono {
             font-family: "JetBrains Mono", monospace;
             font-size: 0.9em;
-            color: #111827;
+            color: #334861;
+            word-break: normal;
+            overflow-wrap: anywhere;
+        }
+
+        .type-value {
+            display: block;
+            white-space: normal;
             word-break: break-word;
+            overflow-wrap: anywhere;
+            line-height: 1.4;
+        }
+
+        .enum-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .enum-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 10px;
+            border-radius: 8px;
+            background: #eef2ff;
+            color: #3730a3;
+            border: 1px solid #c7d2fe;
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1;
         }
 
         .badge {
@@ -332,11 +362,11 @@
 
         .schema-table th {
             background: #edf3fa;
-            color: #0b1220;
+            color: #3d5170;
             font-size: 13px;
             text-transform: uppercase;
             letter-spacing: 0.07em;
-            font-weight: 800;
+            font-weight: 700;
         }
 
         .schema-table tbody tr:nth-child(even) {
@@ -345,8 +375,8 @@
 
         .schema-table td {
             font-size: 14px;
-            color: #1e293b;
-            font-weight: 600;
+            color: #415673;
+            font-weight: 500;
         }
 
         .null-pill {
@@ -609,10 +639,26 @@
                                     @php
                                         $fk = $foreignMap->get($column->column_name);
                                         $nullable = ($column->is_nullable ?? 'NO') === 'YES';
+                                        $columnType = $column->column_type ?? $column->data_type ?? '';
                                     @endphp
                                     <tr>
                                         <td><span class="mono">{{ $column->column_name }}</span></td>
-                                        <td>{{ $column->column_type ?? $column->data_type }}</td>
+                                        <td>
+                                            @if(($column->data_type ?? '') === 'enum')
+                                                @php $enumValues = $column->enum_values ?? []; @endphp
+                                                @if(!empty($enumValues))
+                                                    <div class="enum-list">
+                                                        @foreach($enumValues as $enumValue)
+                                                            <span class="enum-badge">{{ $enumValue }}</span>
+                                                        @endforeach
+                                                    </div>
+                                                @else
+                                                    <span class="type-value">{{ $columnType }}</span>
+                                                @endif
+                                            @else
+                                                <span class="type-value">{{ $columnType }}</span>
+                                            @endif
+                                        </td>
                                         <td>
                                             <span class="null-pill {{ $nullable ? 'null-yes' : 'null-no' }}">
                                                 {{ $nullable ? 'YES' : 'NO' }}
