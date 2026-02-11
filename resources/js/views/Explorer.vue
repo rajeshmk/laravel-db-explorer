@@ -5,6 +5,13 @@ const state = inject('state');
 const showDetail = ref(false);
 const selectedRow = ref(null);
 const search = ref('');
+const showFormModal = ref(false);
+const formMode = ref('create');
+const formRecordId = ref(null);
+const formData = ref({});
+const formBusy = ref(false);
+const formError = ref('');
+const formFieldErrors = ref({});
 
 const navigate = inject('navigate');
 const fetchTableData = inject('fetchTableData');
@@ -13,6 +20,10 @@ const navigateToRecord = inject('navigateToRecord');
 const navigateToTableSchema = inject('navigateToTableSchema');
 const performSearch = inject('performSearch');
 const setTableTab = inject('setTableTab', () => {});
+const updatePresentationType = inject('updatePresentationType');
+const createRecord = inject('createRecord');
+const updateRecord = inject('updateRecord');
+const deleteRecord = inject('deleteRecord');
 
 const activeTab = computed({
     get: () => (state.value.tableTab === 'schema' ? 'schema' : 'data'),
@@ -123,6 +134,194 @@ const formatColumnType = (column) => {
     return column.column_type || '';
 };
 
+const isWritable = computed(() => !!state.value.writeEnabled);
+
+const editableColumns = computed(() =>
+    (state.value.columns || []).filter((column) => {
+        const extra = (column.extra || '').toLowerCase();
+        return !extra.includes('auto_increment');
+    })
+);
+
+const getPresentationTypeForColumn = (column) => {
+    const configured = state.value.presentationTypes?.[column.column_name];
+    if (configured) return configured;
+    if ((column.data_type || '').toLowerCase() === 'enum') return 'select';
+    return 'text';
+};
+
+const getPresentationOptionsForColumn = (column) => {
+    const map = state.value.presentationTypeOptionsByColumn || {};
+    if (Object.prototype.hasOwnProperty.call(map, column.column_name)) {
+        const options = map[column.column_name];
+        return Array.isArray(options) ? options : [];
+    }
+    return state.value.presentationTypeOptions || [];
+};
+
+const getFieldOptionsForColumn = (column) => {
+    return state.value.fieldOptions?.[column.column_name] || [];
+};
+
+const mapInputType = (presentationType) => {
+    if (presentationType === 'number') return 'number';
+    if (presentationType === 'date') return 'date';
+    if (presentationType === 'time') return 'time';
+    if (presentationType === 'datetime') return 'datetime-local';
+    return 'text';
+};
+
+const toDatetimeLocal = (value) => {
+    if (!value) return '';
+    if (typeof value !== 'string') return value;
+    return value.replace(' ', 'T').slice(0, 16);
+};
+
+const fromDatetimeLocal = (value) => {
+    if (!value) return value;
+    if (typeof value !== 'string') return value;
+    return value.replace('T', ' ');
+};
+
+const toTimeInput = (value) => {
+    if (!value || typeof value !== 'string') return '';
+    return value.length >= 5 ? value.slice(0, 5) : value;
+};
+
+const fromTimeInput = (value) => {
+    if (!value || typeof value !== 'string') return value;
+    return value.length === 5 ? `${value}:00` : value;
+};
+
+const initializeForm = (row = null) => {
+    const payload = {};
+    editableColumns.value.forEach((column) => {
+        const colName = column.column_name;
+        const presentationType = getPresentationTypeForColumn(column);
+        const rawValue = row ? row[colName] : null;
+
+        if (presentationType === 'boolean') {
+            payload[colName] = rawValue === 1 || rawValue === '1' || rawValue === true ? 'yes' : (rawValue === null ? '' : 'no');
+            return;
+        }
+
+        if (presentationType === 'datetime') {
+            payload[colName] = toDatetimeLocal(rawValue);
+            return;
+        }
+
+        if (presentationType === 'time') {
+            payload[colName] = toTimeInput(rawValue);
+            return;
+        }
+
+        payload[colName] = rawValue ?? '';
+    });
+    formData.value = payload;
+};
+
+const openCreateModal = () => {
+    formMode.value = 'create';
+    formRecordId.value = null;
+    formError.value = '';
+    formFieldErrors.value = {};
+    initializeForm(null);
+    showFormModal.value = true;
+};
+
+const openEditModal = (row) => {
+    formMode.value = 'edit';
+    formRecordId.value = getPrimaryKeyValue(row);
+    formError.value = '';
+    formFieldErrors.value = {};
+    initializeForm(row);
+    showFormModal.value = true;
+};
+
+const closeFormModal = () => {
+    if (formBusy.value) return;
+    showFormModal.value = false;
+    formError.value = '';
+    formFieldErrors.value = {};
+};
+
+const transformFormPayload = () => {
+    const payload = {};
+    editableColumns.value.forEach((column) => {
+        const colName = column.column_name;
+        const presentationType = getPresentationTypeForColumn(column);
+        const value = formData.value[colName];
+
+        if (presentationType === 'boolean') {
+            payload[colName] = value === 'yes' ? 1 : (value === 'no' ? 0 : null);
+            return;
+        }
+
+        if (presentationType === 'datetime') {
+            payload[colName] = fromDatetimeLocal(value);
+            return;
+        }
+
+        if (presentationType === 'time') {
+            payload[colName] = fromTimeInput(value);
+            return;
+        }
+
+        payload[colName] = value;
+    });
+    return payload;
+};
+
+const submitForm = async () => {
+    if (!state.value.currentTable) return;
+    formBusy.value = true;
+    formError.value = '';
+    formFieldErrors.value = {};
+
+    try {
+        const payload = transformFormPayload();
+        if (formMode.value === 'create') {
+            await createRecord(state.value.currentTable, payload);
+        } else {
+            await updateRecord(state.value.currentTable, formRecordId.value, payload);
+        }
+        showFormModal.value = false;
+    } catch (error) {
+        formError.value = error?.message || 'Failed to save record';
+        formFieldErrors.value = error?.fieldErrors || {};
+    } finally {
+        formBusy.value = false;
+    }
+};
+
+const getFieldError = (columnName) => {
+    return formFieldErrors.value?.[columnName] || '';
+};
+
+const removeRecord = async (row) => {
+    if (!state.value.currentTable) return;
+    const recordId = getPrimaryKeyValue(row);
+    if (recordId === undefined || recordId === null) return;
+    if (!window.confirm(`Delete record ${recordId}? This cannot be undone.`)) return;
+
+    try {
+        await deleteRecord(state.value.currentTable, recordId);
+    } catch (error) {
+        console.error(error);
+        alert(error?.message || 'Failed to delete record');
+    }
+};
+
+const onPresentationTypeChange = async (columnName, nextType) => {
+    if (!state.value.currentTable || !nextType) return;
+    try {
+        await updatePresentationType(state.value.currentTable, columnName, nextType);
+    } catch (error) {
+        console.error(error);
+        alert(error?.message || 'Failed to save presentation type');
+    }
+};
+
 // Watch for selectedRecord from deep link
 watch(() => state.value.selectedRecord, (newRecord) => {
     if (newRecord) {
@@ -210,7 +409,12 @@ const formatValue = (key, value, type, column) => {
 
             <!-- Data Browser -->
             <div v-if="activeTab === 'data'" class="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div class="flex items-center justify-end">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                        <button v-if="isWritable" @click="openCreateModal" class="dbx-btn dbx-btn-primary">
+                            + Create Record
+                        </button>
+                    </div>
                     <div class="relative w-full md:w-[420px]">
                         <input v-model="search" type="text" placeholder="Search records..." 
                                class="dbx-input pl-12">
@@ -222,12 +426,12 @@ const formatValue = (key, value, type, column) => {
                     </div>
                 </div>
 
-                <div class="dbx-surface dbx-panel overflow-hidden">
+                <div class="dbx-surface dbx-panel overflow-visible">
                     <div class="overflow-x-auto custom-scrollbar">
                         <table class="dbx-table min-w-full border-collapse">
                             <thead>
                                 <tr>
-                                    <th class="px-4 py-4 text-left">Details</th>
+                                    <th class="px-4 py-4 text-left">Actions</th>
                                     <th v-for="column in state.columns" :key="column.column_name" 
                                         class="px-6 py-4 text-left">
                                         <button class="dbx-sort" @click="changeSort(column.column_name)">
@@ -236,6 +440,18 @@ const formatValue = (key, value, type, column) => {
                                                 {{ state.direction === 'asc' ? '▲' : '▼' }}
                                             </span>
                                         </button>
+                                        <div v-if="getPresentationOptionsForColumn(column).length > 0" class="mt-2">
+                                            <select
+                                                :value="getPresentationTypeForColumn(column)"
+                                                @change="onPresentationTypeChange(column.column_name, $event.target.value)"
+                                                class="dbx-presentation-select"
+                                                :disabled="!isWritable"
+                                            >
+                                                <option v-for="opt in getPresentationOptionsForColumn(column)" :key="opt.value" :value="opt.value">
+                                                    {{ opt.label }}
+                                                </option>
+                                            </select>
+                                        </div>
                                     </th>
                                 </tr>
                             </thead>
@@ -243,9 +459,41 @@ const formatValue = (key, value, type, column) => {
                                 <tr v-for="(row, idx) in state.data" :key="idx" 
                                     class="dbx-row">
                                     <td class="px-4 py-3.5 whitespace-nowrap">
-                                        <button class="dbx-row-trigger" @click="openDetail(row)">
-                                            View
-                                        </button>
+                                        <div class="dbx-row-actions">
+                                            <button
+                                                class="dbx-icon-action"
+                                                @click="openDetail(row)"
+                                                aria-label="View record details"
+                                                data-tooltip="View record details"
+                                            >
+                                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                </svg>
+                                            </button>
+                                            <button
+                                                v-if="isWritable"
+                                                class="dbx-icon-action"
+                                                @click="openEditModal(row)"
+                                                aria-label="Edit this record"
+                                                data-tooltip="Edit this record"
+                                            >
+                                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5h2M5 19h14M7 19l1.2-4.2a2 2 0 01.5-.82L15.5 7.2a2 2 0 012.83 0l.47.47a2 2 0 010 2.83l-6.78 6.78a2 2 0 01-.82.5L7 19z" />
+                                                </svg>
+                                            </button>
+                                            <button
+                                                v-if="isWritable"
+                                                class="dbx-icon-action dbx-icon-action--danger"
+                                                @click="removeRecord(row)"
+                                                aria-label="Delete this record"
+                                                data-tooltip="Delete this record"
+                                            >
+                                                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 7h12M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-8 0l.8 11.2A2 2 0 009.8 20h4.4a2 2 0 001.99-1.8L17 7" />
+                                                </svg>
+                                            </button>
+                                        </div>
                                     </td>
                                     <td v-for="column in state.columns" :key="column.column_name" 
                                         class="px-6 py-3.5 whitespace-nowrap"
@@ -469,6 +717,79 @@ const formatValue = (key, value, type, column) => {
                 </div>
             </Transition>
         </div>
+
+        <!-- Create/Edit Modal -->
+        <div v-if="showFormModal" class="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <div class="absolute inset-0 bg-gray-900/50" @click="closeFormModal"></div>
+            <div class="relative w-full max-w-3xl dbx-surface dbx-panel max-h-[85vh] overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <div class="dbx-title">{{ formMode === 'create' ? 'Create Record' : 'Edit Record' }}</div>
+                    <button class="dbx-icon-btn" @click="closeFormModal">x</button>
+                </div>
+
+                <div class="p-6 overflow-y-auto custom-scrollbar max-h-[65vh]">
+                    <div v-if="formError" class="mb-4 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        {{ formError }}
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div v-for="column in editableColumns" :key="`form-${column.column_name}`" class="space-y-2">
+                            <label class="text-sm font-medium">{{ column.column_name }}</label>
+
+                            <template v-if="getPresentationTypeForColumn(column) === 'boolean'">
+                                <div class="flex items-center gap-3">
+                                    <label class="inline-flex items-center gap-2">
+                                        <input type="radio" :name="`bool-${column.column_name}`" value="yes" v-model="formData[column.column_name]">
+                                        <span>Yes</span>
+                                    </label>
+                                    <label class="inline-flex items-center gap-2">
+                                        <input type="radio" :name="`bool-${column.column_name}`" value="no" v-model="formData[column.column_name]">
+                                        <span>No</span>
+                                    </label>
+                                </div>
+                            </template>
+
+                            <template v-else-if="['select', 'foreign-select'].includes(getPresentationTypeForColumn(column))">
+                                <select
+                                    v-model="formData[column.column_name]"
+                                    :class="['dbx-input', getFieldError(column.column_name) ? 'dbx-input--error' : '']"
+                                >
+                                    <option value="">Select...</option>
+                                    <option v-for="opt in getFieldOptionsForColumn(column)" :key="`${column.column_name}-${opt.value}`" :value="opt.value">
+                                        {{ opt.label }}
+                                    </option>
+                                </select>
+                            </template>
+
+                            <template v-else-if="getPresentationTypeForColumn(column) === 'textarea'">
+                                <textarea
+                                    v-model="formData[column.column_name]"
+                                    rows="3"
+                                    :class="['dbx-input', getFieldError(column.column_name) ? 'dbx-input--error' : '']"
+                                ></textarea>
+                            </template>
+
+                            <template v-else>
+                                <input
+                                    v-model="formData[column.column_name]"
+                                    :type="mapInputType(getPresentationTypeForColumn(column))"
+                                    :class="['dbx-input', getFieldError(column.column_name) ? 'dbx-input--error' : '']"
+                                >
+                            </template>
+                            <p v-if="getFieldError(column.column_name)" class="text-xs text-red-600">
+                                {{ getFieldError(column.column_name) }}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-3">
+                    <button class="dbx-btn" @click="closeFormModal" :disabled="formBusy">Cancel</button>
+                    <button class="dbx-btn dbx-btn-primary" @click="submitForm" :disabled="formBusy">
+                        {{ formBusy ? 'Saving...' : (formMode === 'create' ? 'Create' : 'Update') }}
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -527,5 +848,137 @@ const formatValue = (key, value, type, column) => {
   font-size: 13px;
   font-weight: 600;
   line-height: 1;
+}
+
+.dbx-presentation-select {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dbx-presentation-select:disabled {
+  opacity: 0.55;
+}
+
+.dbx-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dbx-row-actions .dbx-icon-action:first-child[data-tooltip]::before,
+.dbx-row-actions .dbx-icon-action:first-child[data-tooltip]::after {
+  left: 8px;
+  transform: translateX(0) translateY(4px);
+}
+
+.dbx-icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid #d7ddea;
+  background: #ffffff;
+  color: #4f46e5;
+  transition: all 0.18s ease;
+}
+
+.dbx-icon-action:hover {
+  border-color: #c7d2fe;
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.dbx-icon-action:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+
+.dbx-icon-action[data-tooltip]::before {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  transform: translateX(-50%) translateY(4px);
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s ease;
+  z-index: 30;
+}
+
+.dbx-icon-action[data-tooltip]::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 4px);
+  transform: translateX(-50%) translateY(4px);
+  width: 8px;
+  height: 8px;
+  background: #111827;
+  rotate: 45deg;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s ease;
+  z-index: 29;
+}
+
+.dbx-icon-action[data-tooltip]:hover::before,
+.dbx-icon-action[data-tooltip]:hover::after,
+.dbx-icon-action[data-tooltip]:focus-visible::before,
+.dbx-icon-action[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+.dbx-row-actions .dbx-icon-action:first-child[data-tooltip]:hover::before,
+.dbx-row-actions .dbx-icon-action:first-child[data-tooltip]:hover::after,
+.dbx-row-actions .dbx-icon-action:first-child[data-tooltip]:focus-visible::before,
+.dbx-row-actions .dbx-icon-action:first-child[data-tooltip]:focus-visible::after {
+  transform: translateX(0) translateY(0);
+}
+
+.dbx-icon-action--danger {
+  color: #dc2626;
+}
+
+.dbx-icon-action--danger:hover {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.dbx-input--error {
+  border-color: #f87171 !important;
+  box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.15);
+}
+
+.dbx-btn-primary {
+  background: var(--dbx-accent) !important;
+  border-color: rgba(91, 92, 246, 0.7) !important;
+  color: #ffffff !important;
+}
+
+.dbx-btn-primary:hover {
+  background: #4b4ddd !important;
+  color: #ffffff !important;
 }
 </style>

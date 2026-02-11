@@ -23,7 +23,13 @@ const state = ref({
     sort: null,
     direction: null,
     searchQuery: '',
-    tableTab: 'records'
+    tableTab: 'records',
+    writeEnabled: false,
+    primaryKeyColumn: null,
+    presentationTypes: {},
+    presentationTypeOptions: [],
+    presentationTypeOptionsByColumn: {},
+    fieldOptions: {}
 });
 
 const buildTablePath = (table, tab = 'records') => {
@@ -150,6 +156,12 @@ const fetchTableData = async (table, page = 1, searchQuery = '', sort = null, di
         state.value.pagination = data.pagination;
         state.value.currentTable = table;
         state.value.view = 'table';
+        state.value.writeEnabled = !!data.writeEnabled;
+        state.value.primaryKeyColumn = data.primaryKeyColumn || null;
+        state.value.presentationTypes = data.presentationTypes || {};
+        state.value.presentationTypeOptions = data.presentationTypeOptions || [];
+        state.value.presentationTypeOptionsByColumn = data.presentationTypeOptionsByColumn || {};
+        state.value.fieldOptions = data.fieldOptions || {};
         state.value.searchQuery = searchQuery;
         state.value.foreignKeyDisplay = {};
         state.value.sort = sort;
@@ -215,6 +227,12 @@ const fetchRecordData = async (table, recordId, page = 1, searchQuery = '', sort
         state.value.currentTable = table;
         state.value.view = 'table';
         state.value.tableTab = 'records';
+        state.value.writeEnabled = !!data.writeEnabled;
+        state.value.primaryKeyColumn = data.primaryKeyColumn || null;
+        state.value.presentationTypes = data.presentationTypes || {};
+        state.value.presentationTypeOptions = data.presentationTypeOptions || [];
+        state.value.presentationTypeOptionsByColumn = data.presentationTypeOptionsByColumn || {};
+        state.value.fieldOptions = data.fieldOptions || {};
         state.value.selectedRecord = data.selectedRecord;
         state.value.foreignKeyDisplay = data.foreignKeyDisplay || {};
         state.value.searchQuery = searchQuery;
@@ -296,6 +314,120 @@ const setTableTab = (tab) => {
     updateTableUrl(state.value.currentTable, 'records', urlParams);
 };
 
+const updatePresentationType = async (table, column, presentationType) => {
+    const response = await fetch(`/db-explorer/table/${table}/column/${column}/presentation-type`, {
+        method: 'PUT',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+        },
+        body: JSON.stringify({ presentation_type: presentationType }),
+    });
+
+    if (!response.ok) {
+        throw await buildApiError(response, `Failed to update presentation type (${response.status})`);
+    }
+
+    const data = await response.json();
+    state.value.presentationTypes = {
+        ...state.value.presentationTypes,
+        [column]: data.presentationType || presentationType,
+    };
+};
+
+const buildApiError = async (response, fallbackMessage = 'Request failed') => {
+    let message = fallbackMessage;
+    const fieldErrors = {};
+    const normalizeValidationMessage = (input) => {
+        const text = String(input || '');
+        return text
+            .replace(/\brecord\./gi, '')
+            .replace(/\bThe\s+record\./gi, 'The ');
+    };
+
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+        try {
+            const payload = await response.json();
+            if (payload?.message) {
+                message = normalizeValidationMessage(payload.message);
+            }
+            const errors = payload?.errors || {};
+            Object.entries(errors).forEach(([key, messages]) => {
+                const normalizedKey = key.replace(/^record\./, '');
+                const firstMessage = Array.isArray(messages) ? messages[0] : messages;
+                if (firstMessage) {
+                    fieldErrors[normalizedKey] = normalizeValidationMessage(firstMessage);
+                }
+            });
+        } catch {
+            // ignore parse failures; use fallback message
+        }
+    }
+
+    const error = new Error(message);
+    error.fieldErrors = fieldErrors;
+
+    return error;
+};
+
+const createRecord = async (table, record) => {
+    const response = await fetch(`/db-explorer/table/${table}/record`, {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+        },
+        body: JSON.stringify({ record }),
+    });
+
+    if (!response.ok) {
+        throw await buildApiError(response, `Failed to create record (${response.status})`);
+    }
+
+    await fetchTableData(table, state.value.pagination?.current_page || 1, state.value.searchQuery, state.value.sort, state.value.direction);
+};
+
+const updateRecord = async (table, recordId, record) => {
+    const response = await fetch(`/db-explorer/table/${table}/record/${recordId}`, {
+        method: 'PUT',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+        },
+        body: JSON.stringify({ record }),
+    });
+
+    if (!response.ok) {
+        throw await buildApiError(response, `Failed to update record (${response.status})`);
+    }
+
+    await fetchTableData(table, state.value.pagination?.current_page || 1, state.value.searchQuery, state.value.sort, state.value.direction);
+};
+
+const deleteRecord = async (table, recordId) => {
+    const response = await fetch(`/db-explorer/table/${table}/record/${recordId}`, {
+        method: 'DELETE',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+        }
+    });
+
+    if (!response.ok) {
+        throw await buildApiError(response, `Failed to delete record (${response.status})`);
+    }
+
+    await fetchTableData(table, state.value.pagination?.current_page || 1, state.value.searchQuery, state.value.sort, state.value.direction);
+};
+
 provide('navigate', navigate);
 provide('fetchTableData', fetchTableData);
 provide('fetchRecordData', fetchRecordData);
@@ -303,6 +435,10 @@ provide('navigateToRecord', navigateToRecord);
 provide('navigateToTableSchema', navigateToTableSchema);
 provide('performSearch', performSearch);
 provide('setTableTab', setTableTab);
+provide('updatePresentationType', updatePresentationType);
+provide('createRecord', createRecord);
+provide('updateRecord', updateRecord);
+provide('deleteRecord', deleteRecord);
 provide('state', state);
 
 const tables = computed(() => {

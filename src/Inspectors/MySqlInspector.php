@@ -61,7 +61,17 @@ class MySqlInspector
         $physicalTable = $this->getPrefix() . $table;
 
         $columns = DB::select('
-            SELECT column_name, data_type, column_type, is_nullable, column_key, extra
+            SELECT
+                column_name,
+                data_type,
+                column_type,
+                is_nullable,
+                column_key,
+                extra,
+                column_default,
+                character_maximum_length,
+                numeric_precision,
+                numeric_scale
             FROM information_schema.columns
             WHERE table_schema = ? AND table_name = ?
         ', [$db, $physicalTable]);

@@ -17,12 +17,7 @@ final class DbExplorerServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        if (! $this->shouldRegister()) {
-            return;
-        }
-
-        $this->loadViewsFrom(__DIR__ . '/../resources/views', 'db-explorer');
-        $this->loadRoutesFrom(__DIR__ . '/../routes/web.php');
+        $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
 
         $this->publishes([
             __DIR__ . '/../resources/views' => resource_path('views/vendor/db-explorer'),
@@ -35,6 +30,17 @@ final class DbExplorerServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__ . '/../resources/dist' => public_path('vendor/db-explorer'),
         ], 'db-explorer-assets');
+
+        $this->publishes([
+            __DIR__ . '/../database/migrations' => database_path('migrations'),
+        ], 'db-explorer-migrations');
+
+        if (! $this->shouldRegister()) {
+            return;
+        }
+
+        $this->loadViewsFrom(__DIR__ . '/../resources/views', 'db-explorer');
+        $this->loadRoutesFrom(__DIR__ . '/../routes/web.php');
     }
 
     private function shouldRegister(): bool
