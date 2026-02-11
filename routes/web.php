@@ -13,6 +13,7 @@ Route::middleware(array_merge(
     ->prefix('db-explorer')
     ->group(function () {
         Route::get('/', [ExplorerController::class, 'index'])->name('db-explorer.index');
+        Route::get('/schema', [ExplorerController::class, 'schema'])->name('db-explorer.schema');
         Route::get('/table/{table}', [ExplorerController::class, 'table'])->name('db-explorer.table');
         Route::get('/table/{table}/record/{id}', [ExplorerController::class, 'record'])->name('db-explorer.record');
     })

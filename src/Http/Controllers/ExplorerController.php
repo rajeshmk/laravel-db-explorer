@@ -132,6 +132,33 @@ final class ExplorerController extends Controller
         ]);
     }
 
+    public function schema()
+    {
+        $inspector = new MySqlInspector();
+        $allTables = $inspector->tables();
+
+        $schemaEntries = collect($allTables)
+            ->map(function (object $table) use ($inspector): array {
+                $logicalName = (string) $table->table_name;
+
+                return [
+                    'table_name' => $logicalName,
+                    'display_name' => (string) ($table->display_name ?? $logicalName),
+                    'table_type' => (string) ($table->table_type ?? 'BASE TABLE'),
+                    'columns' => $inspector->columns($logicalName),
+                    'foreignKeys' => $inspector->foreignKeys($logicalName),
+                ];
+            })
+            ->all();
+
+        return view('db-explorer::schema', [
+            'allTables' => $allTables,
+            'schemaEntries' => $schemaEntries,
+            'database' => DB::getDatabaseName(),
+            'connection' => config('database.default'),
+        ]);
+    }
+
     private function buildTableContext(string $table, Request $request): array
     {
         $inspector = new MySqlInspector();
