@@ -29,6 +29,8 @@ const navigateToTableSchema = inject('navigateToTableSchema');
 const performSearch = inject('performSearch');
 const setTableTab = inject('setTableTab', () => {});
 const setGridMode = inject('setGridMode', () => {});
+const isDesktopSidebarOpen = inject('isDesktopSidebarOpen', ref(true));
+const toggleDesktopSidebar = inject('toggleDesktopSidebar', () => {});
 const updatePresentationType = inject('updatePresentationType');
 const fetchForeignOptions = inject('fetchForeignOptions');
 const createRecord = inject('createRecord');
@@ -1361,6 +1363,18 @@ const formatValue = (key, value, type, column, compact = false) => {
             <div class="dbx-surface dbx-panel px-6 py-5">
                 <div class="flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div class="flex items-center space-x-4">
+                    <button
+                        class="dbx-icon-btn hidden md:inline-flex"
+                        @click="toggleDesktopSidebar"
+                        :aria-label="isDesktopSidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'"
+                    >
+                        <svg v-if="isDesktopSidebarOpen" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" />
+                        </svg>
+                        <svg v-else class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7" />
+                        </svg>
+                    </button>
                     <div class="dbx-accent-bg p-2.5 rounded-2xl shadow-lg">
                         <svg class="h-6 w-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />

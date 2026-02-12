@@ -7,6 +7,7 @@ const loading = ref(true);
 const error = ref(null);
 let errorTimeout = null;
 const isMobileSidebarOpen = ref(false);
+const isDesktopSidebarOpen = ref(true);
 const sidebarSearch = ref('');
 const state = ref({
     tables: [],
@@ -491,6 +492,10 @@ provide('createRecord', createRecord);
 provide('updateRecord', updateRecord);
 provide('deleteRecord', deleteRecord);
 provide('state', state);
+provide('isDesktopSidebarOpen', isDesktopSidebarOpen);
+provide('toggleDesktopSidebar', () => {
+    isDesktopSidebarOpen.value = !isDesktopSidebarOpen.value;
+});
 
 const tables = computed(() => {
     const s = sidebarSearch.value.toLowerCase();
@@ -528,8 +533,9 @@ const views = computed(() => {
 
         <!-- Sidebar -->
         <aside :class="[
-            'dbx-sidebar w-80 flex-shrink-0 flex flex-col z-40 md:static fixed inset-y-0 left-0 transition-transform duration-300 bg-white border-r border-gray-100',
-            isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+            'dbx-sidebar w-80 md:w-80 flex-shrink-0 flex flex-col z-40 md:static fixed inset-y-0 left-0 transition-all duration-300 bg-white border-r border-gray-100 md:overflow-hidden',
+            isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
+            isDesktopSidebarOpen ? 'md:opacity-100 md:pointer-events-auto' : 'md:w-0 md:border-r-0 md:opacity-0 md:pointer-events-none'
         ]">
             <!-- Header -->
             <div class="px-6 py-8 flex items-center space-x-3 cursor-pointer group transition-all" @click="navigate('dashboard')">

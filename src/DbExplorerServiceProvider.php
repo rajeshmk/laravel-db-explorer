@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Hatchyu\DbExplorer;
 
+use Hatchyu\DbExplorer\Console\Commands\InstallCommand;
+use Hatchyu\DbExplorer\Console\Commands\UpdateCommand;
 use Illuminate\Support\ServiceProvider;
 
 final class DbExplorerServiceProvider extends ServiceProvider
@@ -17,6 +19,13 @@ final class DbExplorerServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        if ($this->app->runningInConsole()) {
+            $this->commands([
+                InstallCommand::class,
+                UpdateCommand::class,
+            ]);
+        }
+
         $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
 
         $this->publishes([
