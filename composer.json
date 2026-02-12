@@ -1,6 +1,6 @@
 {
     "name": "hatchyu/laravel-db-explorer",
-    "description": "Read-only database schema and data explorer for Laravel",
+    "description": "Database schema and data explorer for Laravel with optional write support",
     "type": "library",
     "license": "MIT",
     "authors": [
