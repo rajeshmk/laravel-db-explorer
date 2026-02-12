@@ -7,14 +7,23 @@ namespace Hatchyu\DbExplorer\Support;
 final class PresentationTypeResolver
 {
     public const TYPE_TEXT = 'text';
+
     public const TYPE_TEXTAREA = 'textarea';
+
     public const TYPE_NUMBER = 'number';
+
     public const TYPE_COLOR = 'color';
+
     public const TYPE_DATE = 'date';
+
     public const TYPE_TIME = 'time';
+
     public const TYPE_DATETIME = 'datetime';
+
     public const TYPE_BOOLEAN = 'boolean';
+
     public const TYPE_SELECT = 'select';
+
     public const TYPE_FOREIGN_SELECT = 'foreign-select';
 
     /**
@@ -165,6 +174,7 @@ final class PresentationTypeResolver
 
     /**
      * @param array<int, string> $types
+     *
      * @return array<int, array{value:string,label:string}>
      */
     public static function optionsForTypes(array $types): array

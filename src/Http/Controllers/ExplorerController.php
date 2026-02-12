@@ -335,7 +335,8 @@ final class ExplorerController extends Controller
                     'foreignKeys' => $inspector->foreignKeys($logicalName),
                 ];
             })
-            ->all();
+            ->all()
+        ;
 
         return view('db-explorer::schema', [
             'allTables' => $allTables,
@@ -767,8 +768,7 @@ final class ExplorerController extends Controller
         array $columns,
         array $foreignKeys,
         array $allowedPresentationTypesByColumn
-    ): array
-    {
+    ): array {
         $databaseName = (string) DB::getDatabaseName();
         $userId = $this->currentUserId();
         $foreignColumns = collect($foreignKeys)->pluck('column_name')->filter()->all();
@@ -783,6 +783,7 @@ final class ExplorerController extends Controller
                 $allowed = $allowedPresentationTypesByColumn[$columnName] ?? [PresentationTypeResolver::TYPE_TEXT];
                 if ($allowed === []) {
                     $fallback[$columnName] = $detected;
+
                     continue;
                 }
 
@@ -813,6 +814,7 @@ final class ExplorerController extends Controller
             $allowed = $allowedPresentationTypesByColumn[$columnName] ?? [PresentationTypeResolver::TYPE_TEXT];
             if ($allowed === []) {
                 $result[$columnName] = $detected;
+
                 continue;
             }
 
@@ -852,6 +854,7 @@ final class ExplorerController extends Controller
     /**
      * @param array<int, object> $columns
      * @param array<int, object> $foreignKeys
+     *
      * @return array<string, array<int, string>>
      */
     private function allowedPresentationTypesByColumn(array $columns, array $foreignKeys): array
@@ -868,6 +871,7 @@ final class ExplorerController extends Controller
             $extra = strtolower((string) ($column->extra ?? ''));
             if (str_contains($extra, 'auto_increment')) {
                 $result[$columnName] = [];
+
                 continue;
             }
 
@@ -882,6 +886,7 @@ final class ExplorerController extends Controller
 
     /**
      * @param array<string, array<int, string>> $allowedPresentationTypesByColumn
+     *
      * @return array<string, array<int, array{value:string,label:string}>>
      */
     private function buildPresentationTypeOptionsByColumn(array $allowedPresentationTypesByColumn): array
@@ -950,8 +955,9 @@ final class ExplorerController extends Controller
     }
 
     /**
-     * @param array<string, mixed> $recordData
+     * @param array<string, mixed>  $recordData
      * @param array<string, string> $presentationTypes
+     *
      * @return array<string, mixed>
      */
     private function prepareRecordPayload(
@@ -986,6 +992,7 @@ final class ExplorerController extends Controller
             $nullable = ($column->is_nullable ?? 'NO') === 'YES';
             if ($value === '' && $nullable) {
                 $payload[$columnName] = null;
+
                 continue;
             }
 
@@ -996,6 +1003,7 @@ final class ExplorerController extends Controller
                 } else {
                     $payload[$columnName] = in_array($value, [1, '1', true, 'true', 'yes', 'on'], true) ? 1 : 0;
                 }
+
                 continue;
             }
 
@@ -1005,6 +1013,7 @@ final class ExplorerController extends Controller
                 } else {
                     $payload[$columnName] = $value;
                 }
+
                 continue;
             }
 
@@ -1015,9 +1024,10 @@ final class ExplorerController extends Controller
     }
 
     /**
-     * @param array<int, object> $columns
-     * @param array<int, object> $foreignKeys
+     * @param array<int, object>    $columns
+     * @param array<int, object>    $foreignKeys
      * @param array<string, string> $presentationTypes
+     *
      * @return array<string, mixed>
      */
     private function validateRecordInput(
