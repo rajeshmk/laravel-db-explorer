@@ -24,6 +24,7 @@ const state = ref({
     direction: null,
     searchQuery: '',
     tableTab: 'records',
+    gridMode: 'raw',
     writeEnabled: false,
     primaryKeyColumn: null,
     presentationTypes: {},
@@ -32,13 +33,18 @@ const state = ref({
     fieldOptions: {}
 });
 
-const buildTablePath = (table, tab = 'records') => {
+const buildTablePath = (table, tab = 'records', gridMode = 'raw') => {
     const safeTab = tab === 'schema' ? 'schema' : 'records';
-    return `/db-explorer/table/${table}/${safeTab}`;
+    if (safeTab === 'schema') {
+        return `/db-explorer/table/${table}/schema`;
+    }
+
+    const safeMode = gridMode === 'editable' ? 'editable' : 'raw';
+    return `/db-explorer/table/${table}/records/${safeMode}`;
 };
 
-const updateTableUrl = (table, tab = 'records', params = null) => {
-    const base = buildTablePath(table, tab);
+const updateTableUrl = (table, tab = 'records', params = null, gridMode = 'raw') => {
+    const base = buildTablePath(table, tab, gridMode);
     if (!params || tab === 'schema') {
         window.history.pushState({}, '', base);
         return;
@@ -82,9 +88,10 @@ onMounted(() => {
         return;
     }
 
-    const recordsMatch = path.match(/^\/db-explorer\/table\/([^/]+)\/records(?:\/)?$/);
+    const recordsMatch = path.match(/^\/db-explorer\/table\/([^/]+)\/records(?:\/(raw|editable))?(?:\/)?$/);
     if (recordsMatch) {
         const tableFromUrl = recordsMatch[1];
+        state.value.gridMode = recordsMatch[2] === 'editable' ? 'editable' : 'raw';
         state.value.tableTab = 'records';
         fetchTableData(tableFromUrl, page, search, sort, direction);
         return;
@@ -94,6 +101,7 @@ onMounted(() => {
     const tableMatch = path.match(/^\/db-explorer\/table\/([^/]+)(?:\/)?$/);
     if (tableMatch) {
         const tableFromUrl = tableMatch[1];
+        state.value.gridMode = 'raw';
         state.value.tableTab = 'records';
         fetchTableData(tableFromUrl, page, search, sort, direction);
         return;
@@ -107,6 +115,7 @@ const navigate = (view, table = null) => {
     state.value.view = view;
     if (view === 'table' && table) {
         state.value.tableTab = 'records';
+        state.value.gridMode = 'raw';
         fetchTableData(table);
     } else {
         state.value.currentTable = null;
@@ -175,7 +184,7 @@ const fetchTableData = async (table, page = 1, searchQuery = '', sort = null, di
             urlParams.set('sort', sort);
             urlParams.set('direction', direction || 'asc');
         }
-        updateTableUrl(table, state.value.tableTab, urlParams);
+        updateTableUrl(table, state.value.tableTab, urlParams, state.value.gridMode);
     } catch (e) {
         const msg = e?.message || 'Failed to load table data';
         setError(msg);
@@ -311,7 +320,26 @@ const setTableTab = (tab) => {
         urlParams.set('sort', state.value.sort);
         urlParams.set('direction', state.value.direction || 'asc');
     }
-    updateTableUrl(state.value.currentTable, 'records', urlParams);
+    updateTableUrl(state.value.currentTable, 'records', urlParams, state.value.gridMode);
+};
+
+const setGridMode = (mode) => {
+    const resolvedMode = mode === 'editable' ? 'editable' : 'raw';
+    state.value.gridMode = resolvedMode;
+
+    if (!state.value.currentTable || state.value.tableTab !== 'records') {
+        return;
+    }
+
+    const urlParams = new URLSearchParams();
+    const currentPage = state.value.pagination?.current_page || 1;
+    urlParams.set('page', String(currentPage));
+    if (state.value.searchQuery) urlParams.set('search', state.value.searchQuery);
+    if (state.value.sort) {
+        urlParams.set('sort', state.value.sort);
+        urlParams.set('direction', state.value.direction || 'asc');
+    }
+    updateTableUrl(state.value.currentTable, 'records', urlParams, resolvedMode);
 };
 
 const updatePresentationType = async (table, column, presentationType) => {
@@ -335,6 +363,27 @@ const updatePresentationType = async (table, column, presentationType) => {
         ...state.value.presentationTypes,
         [column]: data.presentationType || presentationType,
     };
+};
+
+const fetchForeignOptions = async (table, column, search = '', cursor = null, limit = 100) => {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (cursor) params.set('cursor', cursor);
+    params.set('limit', String(Math.min(Math.max(Number(limit) || 100, 1), 100)));
+
+    const response = await fetch(`/db-explorer/table/${table}/column/${column}/options?${params.toString()}`, {
+        method: 'GET',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+        },
+    });
+
+    if (!response.ok) {
+        throw await buildApiError(response, `Failed to load options (${response.status})`);
+    }
+
+    return response.json();
 };
 
 const buildApiError = async (response, fallbackMessage = 'Request failed') => {
@@ -435,7 +484,9 @@ provide('navigateToRecord', navigateToRecord);
 provide('navigateToTableSchema', navigateToTableSchema);
 provide('performSearch', performSearch);
 provide('setTableTab', setTableTab);
+provide('setGridMode', setGridMode);
 provide('updatePresentationType', updatePresentationType);
+provide('fetchForeignOptions', fetchForeignOptions);
 provide('createRecord', createRecord);
 provide('updateRecord', updateRecord);
 provide('deleteRecord', deleteRecord);

@@ -216,7 +216,15 @@ final class ExplorerController extends Controller
 
         $updated = DB::table($table)->where($primaryKeyColumn, $id)->update($payload);
         if ($updated === 0) {
-            abort(404, 'Record not found');
+            $exists = DB::table($table)->where($primaryKeyColumn, $id)->exists();
+            if (! $exists) {
+                abort(404, 'Record not found');
+            }
+
+            return response()->json([
+                'ok' => true,
+                'message' => 'Record is already up to date',
+            ]);
         }
 
         return response()->json([
@@ -334,6 +342,81 @@ final class ExplorerController extends Controller
             'schemaEntries' => $schemaEntries,
             'database' => DB::getDatabaseName(),
             'connection' => config('database.default'),
+        ]);
+    }
+
+    public function columnOptions(string $table, string $column, Request $request)
+    {
+        $validated = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'cursor' => ['nullable', 'string', 'max:191'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
+        $inspector = new MySqlInspector();
+        $allTables = $inspector->tables();
+        $tableExists = collect($allTables)->pluck('table_name')->contains($table);
+        if (! $tableExists) {
+            abort(404, 'Table not found');
+        }
+
+        $foreignKeys = $inspector->foreignKeys($table);
+        $foreignKey = collect($foreignKeys)->firstWhere('column_name', $column);
+        if (! $foreignKey) {
+            abort(404, 'Foreign key column not found');
+        }
+
+        $refTable = (string) ($foreignKey->referenced_table_name ?? '');
+        $refColumn = (string) ($foreignKey->referenced_column_name ?? '');
+        if ($refTable === '' || $refColumn === '') {
+            abort(422, 'Invalid foreign key metadata');
+        }
+
+        $displayColumn = $this->findDisplayColumnForTable($refTable) ?? $refColumn;
+        $limit = (int) ($validated['limit'] ?? 100);
+        $cursor = (string) ($validated['cursor'] ?? '');
+        $search = trim((string) ($validated['search'] ?? ''));
+        $escapedSearch = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search);
+
+        $query = DB::table($refTable)->select($refColumn, $displayColumn);
+        if ($escapedSearch !== '') {
+            $query->where($displayColumn, 'like', "%{$escapedSearch}%");
+        }
+
+        if ($cursor !== '') {
+            $query->where($refColumn, '>', $cursor);
+        }
+
+        $rows = $query
+            ->orderBy($refColumn, 'asc')
+            ->limit($limit + 1)
+            ->get()
+        ;
+
+        $hasMore = $rows->count() > $limit;
+        $items = $rows
+            ->take($limit)
+            ->map(fn ($row) => [
+                'value' => $row->{$refColumn},
+                'label' => $this->formatForeignOptionLabel(
+                    $row->{$refColumn} ?? null,
+                    $row->{$displayColumn} ?? $row->{$refColumn}
+                ),
+            ])
+            ->values()
+            ->all()
+        ;
+
+        $nextCursor = null;
+        if ($hasMore && $items !== []) {
+            $last = end($items);
+            $nextCursor = (string) ($last['value'] ?? '');
+        }
+
+        return response()->json([
+            'items' => $items,
+            'has_more' => $hasMore,
+            'next_cursor' => $nextCursor,
         ]);
     }
 
@@ -576,22 +659,70 @@ final class ExplorerController extends Controller
         $inspector = new MySqlInspector();
         $columns = $inspector->columns($table);
 
+        // Priority buckets for human-friendly labels:
+        // 1) string-like columns, 2) date-like columns.
         $stringTypes = ['varchar', 'char', 'text', 'tinytext', 'mediumtext', 'longtext'];
         $dateTypes = ['date', 'datetime', 'timestamp'];
 
-        foreach ($columns as $column) {
-            if (in_array($column->data_type ?? '', $stringTypes, true)) {
-                return $column->column_name;
-            }
+        // First try string columns, preferring NOT NULL.
+        $stringColumn = $this->pickDisplayColumnByTypes($columns, $stringTypes);
+        if ($stringColumn !== null) {
+            return $stringColumn;
         }
 
-        foreach ($columns as $column) {
-            if (in_array($column->data_type ?? '', $dateTypes, true)) {
-                return $column->column_name;
-            }
+        // Then try date columns, also preferring NOT NULL.
+        $dateColumn = $this->pickDisplayColumnByTypes($columns, $dateTypes);
+        if ($dateColumn !== null) {
+            return $dateColumn;
         }
 
         return null;
+    }
+
+    private function pickDisplayColumnByTypes(array $sourceColumns, array $types): ?string
+    {
+        // Collect columns that belong to the requested data-type bucket.
+        $matches = array_values(array_filter($sourceColumns, static function ($column) use ($types): bool {
+            $columnName = (string) ($column->column_name ?? '');
+            if ($columnName === '') {
+                return false;
+            }
+
+            $dataType = strtolower((string) ($column->data_type ?? ''));
+
+            return in_array($dataType, $types, true);
+        }));
+
+        if ($matches === []) {
+            return null;
+        }
+
+        // Prefer NOT NULL columns so labels are less likely to be empty.
+        foreach ($matches as $column) {
+            $isNullable = strtoupper((string) ($column->is_nullable ?? 'NO')) === 'YES';
+            if (! $isNullable) {
+                return (string) $column->column_name;
+            }
+        }
+
+        // Fallback: first nullable match when all candidates are nullable.
+        return (string) $matches[0]->column_name;
+    }
+
+    /**
+     * Render a foreign-option label as "<id> - <display>".
+     * If display is empty or the same as id, return id only.
+     */
+    private function formatForeignOptionLabel(mixed $idValue, mixed $displayValue): string
+    {
+        $id = (string) ($idValue ?? '');
+        $display = trim((string) ($displayValue ?? $id));
+
+        if ($display === '' || $display === $id) {
+            return $id;
+        }
+
+        return "{$id} - {$display}";
     }
 
     private function findPrimaryKeyColumn(array $columns): ?string
@@ -798,14 +929,17 @@ final class ExplorerController extends Controller
             $displayColumn = $this->findDisplayColumnForTable($refTable) ?? $refColumn;
             $rows = DB::table($refTable)
                 ->select($refColumn, $displayColumn)
-                ->limit(200)
+                ->limit(100)
                 ->get()
             ;
 
             $options[$columnName] = $rows
                 ->map(fn ($row) => [
                     'value' => $row->{$refColumn},
-                    'label' => (string) ($row->{$displayColumn} ?? $row->{$refColumn}),
+                    'label' => $this->formatForeignOptionLabel(
+                        $row->{$refColumn} ?? null,
+                        $row->{$displayColumn} ?? $row->{$refColumn}
+                    ),
                 ])
                 ->values()
                 ->all()
@@ -925,6 +1059,9 @@ final class ExplorerController extends Controller
             $presentationType = $presentationTypes[$columnName] ?? PresentationTypeResolver::TYPE_TEXT;
             if ($presentationType === PresentationTypeResolver::TYPE_BOOLEAN) {
                 $columnRules[] = Rule::in(['yes', 'no', '1', '0', 1, 0, true, false, 'true', 'false', 'on', 'off', null, '']);
+            }
+            if ($presentationType === PresentationTypeResolver::TYPE_COLOR) {
+                $columnRules[] = 'regex:/^#(?:[A-Fa-f0-9]{3}|[A-Fa-f0-9]{6})$/';
             }
 
             $dataType = strtolower((string) ($column->data_type ?? ''));

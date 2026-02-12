@@ -9,6 +9,7 @@ final class PresentationTypeResolver
     public const TYPE_TEXT = 'text';
     public const TYPE_TEXTAREA = 'textarea';
     public const TYPE_NUMBER = 'number';
+    public const TYPE_COLOR = 'color';
     public const TYPE_DATE = 'date';
     public const TYPE_TIME = 'time';
     public const TYPE_DATETIME = 'datetime';
@@ -25,6 +26,7 @@ final class PresentationTypeResolver
             self::TYPE_TEXT,
             self::TYPE_TEXTAREA,
             self::TYPE_NUMBER,
+            self::TYPE_COLOR,
             self::TYPE_DATE,
             self::TYPE_TIME,
             self::TYPE_DATETIME,
@@ -45,6 +47,14 @@ final class PresentationTypeResolver
 
         if ($dataType === 'enum') {
             return self::TYPE_SELECT;
+        }
+
+        $columnName = strtolower((string) ($column->column_name ?? ''));
+        if (
+            str_contains($columnName, 'color')
+            && in_array($dataType, ['char', 'varchar', 'text', 'tinytext', 'mediumtext', 'longtext'], true)
+        ) {
+            return self::TYPE_COLOR;
         }
 
         if ($dataType === 'date') {
@@ -116,10 +126,18 @@ final class PresentationTypeResolver
         }
 
         if (in_array($dataType, ['text', 'tinytext', 'mediumtext', 'longtext', 'json'], true)) {
+            if (str_contains(strtolower((string) ($column->column_name ?? '')), 'color')) {
+                return [self::TYPE_COLOR, self::TYPE_TEXTAREA, self::TYPE_TEXT];
+            }
+
             return [self::TYPE_TEXTAREA, self::TYPE_TEXT];
         }
 
         if (in_array($dataType, ['char', 'varchar'], true)) {
+            if (str_contains(strtolower((string) ($column->column_name ?? '')), 'color')) {
+                return [self::TYPE_COLOR, self::TYPE_TEXT, self::TYPE_TEXTAREA];
+            }
+
             return [self::TYPE_TEXT, self::TYPE_TEXTAREA];
         }
 
@@ -135,6 +153,7 @@ final class PresentationTypeResolver
             self::TYPE_TEXT => 'Text Input',
             self::TYPE_TEXTAREA => 'Textarea',
             self::TYPE_NUMBER => 'Number',
+            self::TYPE_COLOR => 'Color Picker',
             self::TYPE_DATE => 'Date',
             self::TYPE_TIME => 'Time',
             self::TYPE_DATETIME => 'Datetime',

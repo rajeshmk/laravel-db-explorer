@@ -10,15 +10,20 @@
 > 
 > Please review and test the code thoroughly before deploying to critical systems.
 
-A modern, read-only database schema and data explorer for Laravel applications. This package provides a clean and intuitive UI to inspect your database tables, column metadata, and browse records with ease.
+A modern database schema and data explorer for Laravel applications. This package provides a clean and intuitive UI to inspect your database tables, column metadata, browse records, and optionally perform write operations.
 
 ## Features
 
 - **Table Overview**: Lists all database tables in a clean, card-based dashboard.
 - **Table Metadata**: View column names, data types, nullability, and primary/foreign keys.
-- **Data Browser**: Paginated view of table records.
-- **Search**: Fast keyword search across all columns in a table.
-- **Premium UI**: Built with Tailwind CSS and Inter/Outfit typography for a refined experience.
+- **Records Data Grid Modes**:
+  - `Raw` mode for read-only raw values.
+  - `Editable` mode for formatted values + inline editing controls.
+- **Inline Editing**: Edit records directly in the grid (with type-aware inputs).
+- **Create / Edit / Delete**: Optional write operations with a configurable write mode.
+- **Presentation Types**: Per-column UI control (text, textarea, number, date/time/datetime, boolean, dropdown, foreign key dropdown, color picker).
+- **Foreign Key UX**: Searchable FK dropdowns and FK labels shown as `id - display`.
+- **Search**: Fast keyword search across all searchable columns in a table.
 - **Security-First**: Restricted by default to specific environments and middleware.
 
 ## Quick Start (Zero Config)
@@ -30,6 +35,12 @@ DB_EXPLORER_ENABLED=true
 ```
 
 Then visit `/db-explorer` in your browser.
+
+If you also want create/edit/delete actions:
+
+```env
+DB_EXPLORER_WRITE_ENABLED=true
+```
 
 ## Installation
 
@@ -68,6 +79,12 @@ return [
     ],
 
     /*
+     * Controls create/edit/delete actions.
+     * If null, write mode is enabled only in local environment.
+     */
+    'write_enabled' => env('DB_EXPLORER_WRITE_ENABLED'),
+
+    /*
      * Default records per page for the data browser.
      */
     'per_page' => 25,
@@ -92,6 +109,12 @@ The package includes an `EnsureDbExplorerIsAllowed` middleware that checks:
 2. If the current environment matches `allowed_environments`.
 
 You should always keep `DB_EXPLORER_ENABLED=false` in production unless you have additional security layers.
+
+### Write Mode
+
+- `DB_EXPLORER_WRITE_ENABLED=true` enables create/edit/delete actions.
+- `DB_EXPLORER_WRITE_ENABLED=false` forces read-only mode.
+- If `DB_EXPLORER_WRITE_ENABLED` is not set, write mode is enabled only in `local` environment.
 
 ## Customization
 
