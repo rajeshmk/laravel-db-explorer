@@ -198,20 +198,28 @@
                             @endphp
                             <tr class="hover:bg-indigo-50/30 transition-colors">
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-normal text-gray-800">{{ $column->column_name }}</td>
-                                <td class="px-6 py-4 whitespace-nowrap">
+                                <td class="px-6 py-4 {{ ($column->data_type ?? '') === 'enum' ? '' : 'whitespace-nowrap' }}">
                                     @php
                                         $columnType = $column->column_type;
-                                        if (($column->data_type ?? '') === 'enum') {
-                                            preg_match_all("/'((?:\\\\'|[^'])*)'/", $columnType, $matches);
-                                            if (!empty($matches[1])) {
-                                                $values = array_map(fn($v) => preg_replace('/[-_]+/', ' ', $v), $matches[1]);
-                                                $columnType = 'enum(' . implode(', ', $values) . ')';
-                                            }
-                                        }
                                     @endphp
-                                    <span class="text-[10px] text-gray-600" title="{{ $column->data_type }}">
-                                        {{ $columnType }}
-                                    </span>
+                                    @if(($column->data_type ?? '') === 'enum')
+                                        @php $enumValues = $column->enum_values ?? []; @endphp
+                                        @if(!empty($enumValues))
+                                            <div class="flex flex-wrap items-center gap-2">
+                                                @foreach($enumValues as $enumValue)
+                                                    <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                                        {{ $enumValue }}
+                                                    </span>
+                                                @endforeach
+                                            </div>
+                                        @else
+                                            <span class="text-[10px] text-gray-600">{{ $columnType }}</span>
+                                        @endif
+                                    @else
+                                        <span class="text-[10px] text-gray-600" title="{{ $column->data_type }}">
+                                            {{ $columnType }}
+                                        </span>
+                                    @endif
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-center">
                                     @if($column->is_nullable === 'YES')
@@ -233,7 +241,7 @@
                                         @endif
 
                                         @if($fk)
-                                            <a href="{{ route('db-explorer.table', ['table' => $fk->referenced_table_name]) }}" 
+                                            <a href="{{ route('db-explorer.table.schema', ['table' => $fk->referenced_table_name]) }}" 
                                                class="text-[10px] text-blue-600 hover:text-blue-800 transition-colors">
                                                 FK -> {{ $fk->referenced_table_display_name }}.{{ $fk->referenced_column_name }}
                                             </a>

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hatchyu\DbExplorer\Inspectors;
 
+use Hatchyu\DbExplorer\Support\EnumValueExtractor;
 use Illuminate\Support\Facades\DB;
 
 class MySqlInspector
@@ -59,11 +60,30 @@ class MySqlInspector
         $db = DB::getDatabaseName();
         $physicalTable = $this->getPrefix() . $table;
 
-        return DB::select('
-            SELECT column_name, data_type, column_type, is_nullable, column_key, extra
+        $columns = DB::select('
+            SELECT
+                column_name,
+                data_type,
+                column_type,
+                is_nullable,
+                column_key,
+                extra,
+                column_default,
+                character_maximum_length,
+                numeric_precision,
+                numeric_scale
             FROM information_schema.columns
             WHERE table_schema = ? AND table_name = ?
         ', [$db, $physicalTable]);
+
+        foreach ($columns as $column) {
+            $isEnum = strtolower((string) ($column->data_type ?? '')) === 'enum';
+            $column->enum_values = $isEnum
+                ? EnumValueExtractor::extractFromColumnType((string) ($column->column_type ?? ''))
+                : [];
+        }
+
+        return $columns;
     }
 
     public function foreignKeys(string $table): array

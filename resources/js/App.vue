@@ -22,8 +22,37 @@ const state = ref({
     foreignKeyDisplay: {},
     sort: null,
     direction: null,
-    searchQuery: ''
+    searchQuery: '',
+    tableTab: 'records',
+    gridMode: 'raw',
+    writeEnabled: false,
+    primaryKeyColumn: null,
+    presentationTypes: {},
+    presentationTypeOptions: [],
+    presentationTypeOptionsByColumn: {},
+    fieldOptions: {}
 });
+
+const buildTablePath = (table, tab = 'records', gridMode = 'raw') => {
+    const safeTab = tab === 'schema' ? 'schema' : 'records';
+    if (safeTab === 'schema') {
+        return `/db-explorer/table/${table}/schema`;
+    }
+
+    const safeMode = gridMode === 'editable' ? 'editable' : 'raw';
+    return `/db-explorer/table/${table}/records/${safeMode}`;
+};
+
+const updateTableUrl = (table, tab = 'records', params = null, gridMode = 'raw') => {
+    const base = buildTablePath(table, tab, gridMode);
+    if (!params || tab === 'schema') {
+        window.history.pushState({}, '', base);
+        return;
+    }
+
+    const qs = params.toString();
+    window.history.pushState({}, '', qs ? `${base}?${qs}` : base);
+};
 
 onMounted(() => {
     // Inject initial data from window if available
@@ -51,10 +80,29 @@ onMounted(() => {
         return;
     }
 
-    // Match table URL pattern
-    const tableMatch = path.match(/\/db-explorer\/table\/([^/]+)/);
+    const schemaMatch = path.match(/^\/db-explorer\/table\/([^/]+)\/schema(?:\/)?$/);
+    if (schemaMatch) {
+        const tableFromUrl = schemaMatch[1];
+        state.value.tableTab = 'schema';
+        fetchTableData(tableFromUrl, page, search, sort, direction);
+        return;
+    }
+
+    const recordsMatch = path.match(/^\/db-explorer\/table\/([^/]+)\/records(?:\/(raw|editable))?(?:\/)?$/);
+    if (recordsMatch) {
+        const tableFromUrl = recordsMatch[1];
+        state.value.gridMode = recordsMatch[2] === 'editable' ? 'editable' : 'raw';
+        state.value.tableTab = 'records';
+        fetchTableData(tableFromUrl, page, search, sort, direction);
+        return;
+    }
+
+    // Backward compatibility for legacy /table/{table}
+    const tableMatch = path.match(/^\/db-explorer\/table\/([^/]+)(?:\/)?$/);
     if (tableMatch) {
         const tableFromUrl = tableMatch[1];
+        state.value.gridMode = 'raw';
+        state.value.tableTab = 'records';
         fetchTableData(tableFromUrl, page, search, sort, direction);
         return;
     }
@@ -66,6 +114,8 @@ onMounted(() => {
 const navigate = (view, table = null) => {
     state.value.view = view;
     if (view === 'table' && table) {
+        state.value.tableTab = 'records';
+        state.value.gridMode = 'raw';
         fetchTableData(table);
     } else {
         state.value.currentTable = null;
@@ -115,12 +165,18 @@ const fetchTableData = async (table, page = 1, searchQuery = '', sort = null, di
         state.value.pagination = data.pagination;
         state.value.currentTable = table;
         state.value.view = 'table';
+        state.value.writeEnabled = !!data.writeEnabled;
+        state.value.primaryKeyColumn = data.primaryKeyColumn || null;
+        state.value.presentationTypes = data.presentationTypes || {};
+        state.value.presentationTypeOptions = data.presentationTypeOptions || [];
+        state.value.presentationTypeOptionsByColumn = data.presentationTypeOptionsByColumn || {};
+        state.value.fieldOptions = data.fieldOptions || {};
         state.value.searchQuery = searchQuery;
         state.value.foreignKeyDisplay = {};
         state.value.sort = sort;
         state.value.direction = sort ? (direction || 'asc') : null;
         
-        // Update URL
+        // Update URL for dedicated records/schema paths
         const urlParams = new URLSearchParams();
         urlParams.set('page', page);
         if (searchQuery) urlParams.set('search', searchQuery);
@@ -128,7 +184,7 @@ const fetchTableData = async (table, page = 1, searchQuery = '', sort = null, di
             urlParams.set('sort', sort);
             urlParams.set('direction', direction || 'asc');
         }
-        window.history.pushState({}, '', `/db-explorer/table/${table}?${urlParams.toString()}`);
+        updateTableUrl(table, state.value.tableTab, urlParams, state.value.gridMode);
     } catch (e) {
         const msg = e?.message || 'Failed to load table data';
         setError(msg);
@@ -179,6 +235,13 @@ const fetchRecordData = async (table, recordId, page = 1, searchQuery = '', sort
         state.value.pagination = data.pagination;
         state.value.currentTable = table;
         state.value.view = 'table';
+        state.value.tableTab = 'records';
+        state.value.writeEnabled = !!data.writeEnabled;
+        state.value.primaryKeyColumn = data.primaryKeyColumn || null;
+        state.value.presentationTypes = data.presentationTypes || {};
+        state.value.presentationTypeOptions = data.presentationTypeOptions || [];
+        state.value.presentationTypeOptionsByColumn = data.presentationTypeOptionsByColumn || {};
+        state.value.fieldOptions = data.fieldOptions || {};
         state.value.selectedRecord = data.selectedRecord;
         state.value.foreignKeyDisplay = data.foreignKeyDisplay || {};
         state.value.searchQuery = searchQuery;
@@ -231,11 +294,202 @@ const navigateToRecord = (table, recordId) => {
     fetchRecordData(table, recordId);
 };
 
+const navigateToTableSchema = (table) => {
+    state.value.tableTab = 'schema';
+    fetchTableData(table);
+};
+
+const setTableTab = (tab) => {
+    const resolvedTab = tab === 'schema' ? 'schema' : 'records';
+    state.value.tableTab = resolvedTab;
+
+    if (!state.value.currentTable) {
+        return;
+    }
+
+    if (resolvedTab === 'schema') {
+        updateTableUrl(state.value.currentTable, 'schema');
+        return;
+    }
+
+    const urlParams = new URLSearchParams();
+    const currentPage = state.value.pagination?.current_page || 1;
+    urlParams.set('page', String(currentPage));
+    if (state.value.searchQuery) urlParams.set('search', state.value.searchQuery);
+    if (state.value.sort) {
+        urlParams.set('sort', state.value.sort);
+        urlParams.set('direction', state.value.direction || 'asc');
+    }
+    updateTableUrl(state.value.currentTable, 'records', urlParams, state.value.gridMode);
+};
+
+const setGridMode = (mode) => {
+    const resolvedMode = mode === 'editable' ? 'editable' : 'raw';
+    state.value.gridMode = resolvedMode;
+
+    if (!state.value.currentTable || state.value.tableTab !== 'records') {
+        return;
+    }
+
+    const urlParams = new URLSearchParams();
+    const currentPage = state.value.pagination?.current_page || 1;
+    urlParams.set('page', String(currentPage));
+    if (state.value.searchQuery) urlParams.set('search', state.value.searchQuery);
+    if (state.value.sort) {
+        urlParams.set('sort', state.value.sort);
+        urlParams.set('direction', state.value.direction || 'asc');
+    }
+    updateTableUrl(state.value.currentTable, 'records', urlParams, resolvedMode);
+};
+
+const updatePresentationType = async (table, column, presentationType) => {
+    const response = await fetch(`/db-explorer/table/${table}/column/${column}/presentation-type`, {
+        method: 'PUT',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+        },
+        body: JSON.stringify({ presentation_type: presentationType }),
+    });
+
+    if (!response.ok) {
+        throw await buildApiError(response, `Failed to update presentation type (${response.status})`);
+    }
+
+    const data = await response.json();
+    state.value.presentationTypes = {
+        ...state.value.presentationTypes,
+        [column]: data.presentationType || presentationType,
+    };
+};
+
+const fetchForeignOptions = async (table, column, search = '', cursor = null, limit = 100) => {
+    const params = new URLSearchParams();
+    if (search) params.set('search', search);
+    if (cursor) params.set('cursor', cursor);
+    params.set('limit', String(Math.min(Math.max(Number(limit) || 100, 1), 100)));
+
+    const response = await fetch(`/db-explorer/table/${table}/column/${column}/options?${params.toString()}`, {
+        method: 'GET',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+        },
+    });
+
+    if (!response.ok) {
+        throw await buildApiError(response, `Failed to load options (${response.status})`);
+    }
+
+    return response.json();
+};
+
+const buildApiError = async (response, fallbackMessage = 'Request failed') => {
+    let message = fallbackMessage;
+    const fieldErrors = {};
+    const normalizeValidationMessage = (input) => {
+        const text = String(input || '');
+        return text
+            .replace(/\brecord\./gi, '')
+            .replace(/\bThe\s+record\./gi, 'The ');
+    };
+
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+        try {
+            const payload = await response.json();
+            if (payload?.message) {
+                message = normalizeValidationMessage(payload.message);
+            }
+            const errors = payload?.errors || {};
+            Object.entries(errors).forEach(([key, messages]) => {
+                const normalizedKey = key.replace(/^record\./, '');
+                const firstMessage = Array.isArray(messages) ? messages[0] : messages;
+                if (firstMessage) {
+                    fieldErrors[normalizedKey] = normalizeValidationMessage(firstMessage);
+                }
+            });
+        } catch {
+            // ignore parse failures; use fallback message
+        }
+    }
+
+    const error = new Error(message);
+    error.fieldErrors = fieldErrors;
+
+    return error;
+};
+
+const createRecord = async (table, record) => {
+    const response = await fetch(`/db-explorer/table/${table}/record`, {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+        },
+        body: JSON.stringify({ record }),
+    });
+
+    if (!response.ok) {
+        throw await buildApiError(response, `Failed to create record (${response.status})`);
+    }
+
+    await fetchTableData(table, state.value.pagination?.current_page || 1, state.value.searchQuery, state.value.sort, state.value.direction);
+};
+
+const updateRecord = async (table, recordId, record) => {
+    const response = await fetch(`/db-explorer/table/${table}/record/${recordId}`, {
+        method: 'PUT',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+        },
+        body: JSON.stringify({ record }),
+    });
+
+    if (!response.ok) {
+        throw await buildApiError(response, `Failed to update record (${response.status})`);
+    }
+
+    await fetchTableData(table, state.value.pagination?.current_page || 1, state.value.searchQuery, state.value.sort, state.value.direction);
+};
+
+const deleteRecord = async (table, recordId) => {
+    const response = await fetch(`/db-explorer/table/${table}/record/${recordId}`, {
+        method: 'DELETE',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+        }
+    });
+
+    if (!response.ok) {
+        throw await buildApiError(response, `Failed to delete record (${response.status})`);
+    }
+
+    await fetchTableData(table, state.value.pagination?.current_page || 1, state.value.searchQuery, state.value.sort, state.value.direction);
+};
+
 provide('navigate', navigate);
 provide('fetchTableData', fetchTableData);
 provide('fetchRecordData', fetchRecordData);
 provide('navigateToRecord', navigateToRecord);
+provide('navigateToTableSchema', navigateToTableSchema);
 provide('performSearch', performSearch);
+provide('setTableTab', setTableTab);
+provide('setGridMode', setGridMode);
+provide('updatePresentationType', updatePresentationType);
+provide('fetchForeignOptions', fetchForeignOptions);
+provide('createRecord', createRecord);
+provide('updateRecord', updateRecord);
+provide('deleteRecord', deleteRecord);
 provide('state', state);
 
 const tables = computed(() => {
@@ -316,6 +570,18 @@ const views = computed(() => {
 
             <!-- Navigation -->
             <nav class="flex-1 overflow-y-auto custom-scrollbar px-4 py-6 space-y-6">
+                <div>
+                    <a
+                        href="/db-explorer/schema"
+                        class="w-full text-left px-3 py-2.5 rounded-lg flex items-center space-x-3 transition-all duration-150 group text-gray-700 hover:bg-gray-50 border border-transparent"
+                    >
+                        <svg class="h-4 w-4 flex-shrink-0 transition-colors text-gray-400 group-hover:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z" />
+                        </svg>
+                        <span class="truncate text-sm font-medium">Schema Report</span>
+                    </a>
+                </div>
+
                 <!-- Tables Section -->
                 <div>
                     <div class="px-2 mb-4 flex items-center justify-between">

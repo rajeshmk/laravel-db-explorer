@@ -5,6 +5,17 @@ declare(strict_types=1);
 return [
     'enabled' => env('DB_EXPLORER_ENABLED', false),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Write Mode
+    |--------------------------------------------------------------------------
+    |
+    | Controls create/edit/delete actions in the explorer.
+    | If this is null, write mode is enabled only in local environment.
+    |
+    */
+    'write_enabled' => env('DB_EXPLORER_WRITE_ENABLED'),
+
     'allowed_environments' => [
         'local',
     ],
