@@ -26,22 +26,6 @@ A modern database schema and data explorer for Laravel applications. This packag
 - **Search**: Fast keyword search across all searchable columns in a table.
 - **Security-First**: Restricted by default to specific environments and middleware.
 
-## Quick Start (Zero Config)
-
-You can use this package without publishing any configuration or views. Just add this to your `.env` file:
-
-```env
-DB_EXPLORER_ENABLED=true
-```
-
-Then visit `/db-explorer` in your browser.
-
-If you also want create/edit/delete actions:
-
-```env
-DB_EXPLORER_WRITE_ENABLED=true
-```
-
 ## Installation
 
 You can install the package via composer:
@@ -54,11 +38,84 @@ The service provider will be automatically registered.
 
 ### Publishing Assets
 
-Publish the configuration file and views (optional) using:
+Publish frontend assets (required for proper explorer rendering):
 
 ```bash
-php artisan vendor:publish --provider="Hatchyu\DbExplorer\DbExplorerServiceProvider"
+php artisan vendor:publish --tag=db-explorer-assets --force
 ```
+
+Optional publishes:
+
+```bash
+php artisan vendor:publish --tag=db-explorer-config
+php artisan vendor:publish --tag=db-explorer-views
+php artisan vendor:publish --tag=db-explorer-migrations
+```
+
+### Install / Update Commands
+
+You can use package commands instead of manually publishing tags:
+
+```bash
+php artisan db-explorer:install
+php artisan db-explorer:update
+```
+
+Helpful options:
+
+```bash
+# Include config/views during install
+php artisan db-explorer:install --with-config --with-views
+
+# Force-republish config/views during update
+php artisan db-explorer:update --with-config --with-views
+
+# Skip auto-migrate when write mode is enabled
+php artisan db-explorer:install --skip-migrate
+php artisan db-explorer:update --skip-migrate
+```
+
+## Quick Start
+
+1. Install the package:
+
+```bash
+composer require hatchyu/laravel-db-explorer
+```
+
+2. Publish explorer assets (required for proper UI rendering):
+
+```bash
+php artisan vendor:publish --tag=db-explorer-assets --force
+```
+
+Or run the package installer:
+
+```bash
+php artisan db-explorer:install
+```
+
+3. Enable explorer in `.env`:
+
+```env
+DB_EXPLORER_ENABLED=true
+```
+
+4. Optional: enable write mode:
+
+```env
+DB_EXPLORER_WRITE_ENABLED=true
+```
+
+5. If write mode is enabled, run migrations:
+
+```bash
+php artisan migrate
+```
+
+Then open:
+
+`https://your-app.com/db-explorer`
 
 ## Configuration
 
@@ -115,6 +172,8 @@ You should always keep `DB_EXPLORER_ENABLED=false` in production unless you have
 - `DB_EXPLORER_WRITE_ENABLED=true` enables create/edit/delete actions.
 - `DB_EXPLORER_WRITE_ENABLED=false` forces read-only mode.
 - If `DB_EXPLORER_WRITE_ENABLED` is not set, write mode is enabled only in `local` environment.
+- Write mode requires running migrations (`php artisan migrate`).
+- Publishing `db-explorer-migrations` is optional (use it only if you want migration files copied into your app).
 
 ## Customization
 
